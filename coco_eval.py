@@ -46,7 +46,7 @@ weights_path = f'weights/efficientdet-d{compound_coef}.pth' if args.weights is N
 
 print(f'running coco-style evaluation on project {project_name}, weights {weights_path}...')
 
-params = yaml.safe_load(open(f'projects/{project_name}.yml'))
+params = yaml.safe_load(open(f'project/{project_name}.yml'))
 obj_list = params['obj_list']
 
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
@@ -137,8 +137,8 @@ def _eval(coco_gt, image_ids, pred_json_path):
 
 if __name__ == '__main__':
     SET_NAME = params['val_set']
-    VAL_GT = f'datasets/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
-    VAL_IMGS = f'datasets/{params["project_name"]}/{SET_NAME}/'
+    VAL_GT = f'dataset/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
+    VAL_IMGS = f'dataset/{params["project_name"]}/{SET_NAME}/'
     MAX_IMAGES = 10000
     coco_gt = COCO(VAL_GT)
     image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
