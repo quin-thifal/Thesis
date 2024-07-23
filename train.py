@@ -1,7 +1,3 @@
-# original author: signatrix
-# adapted from https://github.com/signatrix/efficientdet/blob/master/train.py
-# modified by Zylo117
-
 import argparse
 import datetime
 import os
@@ -238,16 +234,16 @@ def train(opt):
                     epoch_loss.append(float(loss))
 
                     progress_bar.set_description(
-                        'Step: {}. Epoch: {}/{}. Iteration: {}/{}. Cls loss: {:.5f}. Reg loss: {:.5f}. Total loss: {:.5f}'.format(
+                        'Step: {}   ||  Tra Epoch: {}/{}    ||  Itr: {}/{}  ||  Cls Loss: {:.5f}    ||  Reg Loss: {:.5f}    ||  Ttl Loss: {:.5f}'.format(
                             step, epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(),
                             reg_loss.item(), loss.item()))
                     writer.add_scalars('Loss', {'train': loss}, step)
-                    writer.add_scalars('Regression_loss', {'train': reg_loss}, step)
-                    writer.add_scalars('Classfication_loss', {'train': cls_loss}, step)
+                    writer.add_scalars('Reg Loss', {'train': reg_loss}, step)
+                    writer.add_scalars('Cls Loss', {'train': cls_loss}, step)
 
                     # log learning_rate
                     current_lr = optimizer.param_groups[0]['lr']
-                    writer.add_scalar('learning_rate', current_lr, step)
+                    writer.add_scalar('LR', current_lr, step)
 
                     step += 1
 
@@ -290,11 +286,11 @@ def train(opt):
                 loss = cls_loss + reg_loss
 
                 print(
-                    'Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
+                    '               Val Epoch: {}/{}                    ||  Cls Loss: {:1.5f}   ||  Reg Loss: {:1.5f}   ||  Ttl Loss: {:1.5f}'.format(
                         epoch, opt.num_epochs, cls_loss, reg_loss, loss))
                 writer.add_scalars('Loss', {'val': loss}, step)
-                writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
-                writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
+                writer.add_scalars('Reg Loss', {'val': reg_loss}, step)
+                writer.add_scalars('Cls Loss', {'val': cls_loss}, step)
 
                 if loss + opt.es_min_delta < best_loss:
                     best_loss = loss
