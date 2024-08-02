@@ -13,7 +13,7 @@ from torchvision import transforms
 from tqdm.autonotebook import tqdm
 
 from backbone import EfficientDetBackbone
-from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
+from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter
 from efficientdet.loss import FocalLoss
 from utils.sync_batchnorm import patch_replication_callback
 from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string
@@ -105,6 +105,18 @@ class ModelWithLoss(nn.Module):
         return cls_loss, reg_loss
 
 
+def collate_fn(batch):
+    imgs = [item['img'] for item in batch]
+    annot = [item['annot'] for item in batch]
+    filenames = [item['filename'] for item in batch]
+    scales = [item['scale'] for item in batch]
+
+    imgs = torch.stack(imgs, 0)
+    annot = torch.stack(annot, 0)
+
+    return {'img': imgs, 'annot': annot, 'filename': filenames, 'scale': scales}
+
+
 def train(opt):
     params = Params(f'project/{opt.project}.yml')
 
@@ -121,29 +133,31 @@ def train(opt):
     os.makedirs(opt.log_path, exist_ok=True)
     os.makedirs(opt.saved_path, exist_ok=True)
 
+    input_sizes = [512, 640, 768, 896, 1024]  # Example sizes for different coefficients
+
+    train_dataset = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
+                                transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
+                                                              Augmenter(),
+                                                              Resizer(input_sizes[opt.compound_coef])]))
+
+    val_dataset = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.val_set,
+                              transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
+                                                            Resizer(input_sizes[opt.compound_coef])]))
+
     training_params = {'batch_size': opt.batch_size,
                        'shuffle': True,
                        'drop_last': True,
-                       'collate_fn': collater,
+                       'collate_fn': collate_fn,
                        'num_workers': opt.num_workers}
 
     val_params = {'batch_size': opt.batch_size,
                   'shuffle': False,
                   'drop_last': True,
-                  'collate_fn': collater,
+                  'collate_fn': collate_fn,
                   'num_workers': opt.num_workers}
 
-    input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
-    training_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.train_set,
-                               transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
-                                                             Augmenter(),
-                                                             Resizer(input_sizes[opt.compound_coef])]))
-    training_generator = DataLoader(training_set, **training_params)
-
-    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.val_set,
-                          transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
-                                                        Resizer(input_sizes[opt.compound_coef])]))
-    val_generator = DataLoader(val_set, **val_params)
+    training_generator = DataLoader(train_dataset, **training_params)
+    val_generator = DataLoader(val_dataset, **val_params)
 
     model = EfficientDetBackbone(num_classes=len(params.obj_list), compound_coef=opt.compound_coef,
                                  ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales))
@@ -159,7 +173,7 @@ def train(opt):
             last_step = 0
 
         try:
-            ret = model.load_state_dict(torch.load(weights_path), strict=False)
+            model.load_state_dict(torch.load(weights_path), strict=False)
         except RuntimeError as e:
             print(f'[Warning] Ignoring {e}')
             print(
@@ -201,120 +215,50 @@ def train(opt):
 
     if opt.optim == 'adamw':
         optimizer = torch.optim.AdamW(model.parameters(), opt.lr)
+    elif opt.optim == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), opt.lr, momentum=0.9, weight_decay=5e-4)
     else:
-        optimizer = torch.optim.SGD(model.parameters(), opt.lr, momentum=0.9, nesterov=True)
+        raise ValueError('Optimizer must be adamw or sgd')
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+    for epoch in range(last_step // len(training_generator) + 1, opt.num_epochs + 1):
+        model.train()
+        for step, (imgs, annotations, _) in tqdm(enumerate(training_generator)):
+            if torch.cuda.is_available():
+                imgs = imgs.cuda()
+                annotations = [ann.cuda() for ann in annotations]
 
-    epoch = 0
-    best_loss = 1e5
-    best_epoch = 0
-    step = max(0, last_step)
-    model.train()
+            optimizer.zero_grad()
+            cls_loss, reg_loss = model(imgs, annotations)
+            loss = cls_loss + reg_loss
+            loss.backward()
+            optimizer.step()
 
-    num_iter_per_epoch = len(training_generator)
+            if step % 10 == 0:
+                writer.add_scalar('Train/Loss', loss.item(), epoch * len(training_generator) + step)
+                writer.add_scalar('Train/Cls_Loss', cls_loss.item(), epoch * len(training_generator) + step)
+                writer.add_scalar('Train/Reg_Loss', reg_loss.item(), epoch * len(training_generator) + step)
 
-    try:
-        for epoch in range(opt.num_epochs):
-            last_epoch = step
-            for iter, data in tqdm(enumerate(training_generator), total=num_iter_per_epoch):
-                optimizer.zero_grad()
+        if epoch % opt.val_interval == 0:
+            model.eval()
+            with torch.no_grad():
+                val_loss = 0
+                for imgs, annotations, _ in tqdm(val_generator):
+                    if torch.cuda.is_available():
+                        imgs = imgs.cuda()
+                        annotations = [ann.cuda() for ann in annotations]
+                    cls_loss, reg_loss = model(imgs, annotations)
+                    loss = cls_loss + reg_loss
+                    val_loss += loss.item()
 
-                imgs = data['img']
-                annot = data['annot']
-                filenames = data['filename']  # Assuming filenames are available in the data dict
+                writer.add_scalar('Val/Loss', val_loss / len(val_generator), epoch)
 
-                if params.num_gpus == 1:
-                    imgs = imgs.cuda()
-                    annot = annot.cuda()
+        if epoch % opt.save_interval == 0:
+            save_path = os.path.join(opt.saved_path, f'epoch_{epoch}.pth')
+            torch.save(model.state_dict(), save_path)
 
-                cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
-                cls_loss = cls_loss.mean()
-                reg_loss = reg_loss.mean()
-
-                loss = cls_loss + reg_loss
-                if loss == 0 or not torch.isfinite(loss):
-                    continue
-
-                loss.backward()
-                optimizer.step()
-                step += 1
-
-                if step % 100 == 0:
-                    writer.add_scalars('Loss', {'train': loss.item()}, step)
-                    writer.add_scalars('Regression_loss', {'train': reg_loss.item()}, step)
-                    writer.add_scalars('Classfication_loss', {'train': cls_loss.item()}, step)
-
-            if epoch % opt.val_interval == 0:
-                model.eval()
-                loss_regression_ls = []
-                loss_classification_ls = []
-                for iter, data in enumerate(val_generator):
-                    with torch.no_grad():
-                        imgs = data['img']
-                        annot = data['annot']
-                        filenames = data['filename']  # Assuming filenames are available in the data dict
-
-                        if params.num_gpus == 1:
-                            imgs = imgs.cuda()
-                            annot = annot.cuda()
-
-                        cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
-                        cls_loss = cls_loss.mean()
-                        reg_loss = reg_loss.mean()
-
-                        loss = cls_loss + reg_loss
-                        if loss == 0 or not torch.isfinite(loss):
-                            continue
-
-                        preds = postprocess(imgs, anchors, regression, classification,
-                                            regressBoxes, clipBoxes, opt.threshold, nms_threshold)
-
-                        for filename, pred in zip(filenames, preds):
-                            if filename.startswith('CG'):
-                                print(f"Processing {filename} as Sehat")
-                            elif filename.startswith('DM'):
-                                print(f"Processing {filename} as DMT2")
-
-                        loss_classification_ls.append(cls_loss.item())
-                        loss_regression_ls.append(reg_loss.item())
-
-                cls_loss = np.mean(loss_classification_ls)
-                reg_loss = np.mean(loss_regression_ls)
-                loss = cls_loss + reg_loss
-
-                print(
-                    'Val. Epoch: {}/{}. Classification loss: {:1.5f}. Regression loss: {:1.5f}. Total loss: {:1.5f}'.format(
-                        epoch, opt.num_epochs, cls_loss, reg_loss, loss))
-                writer.add_scalars('Loss', {'val': loss}, step)
-                writer.add_scalars('Regression_loss', {'val': reg_loss}, step)
-                writer.add_scalars('Classfication_loss', {'val': cls_loss}, step)
-
-                if loss + opt.es_min_delta < best_loss:
-                    best_loss = loss
-                    best_epoch = epoch
-
-                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
-
-                model.train()
-
-                if epoch - best_epoch > opt.es_patience > 0:
-                    print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
-                    break
-
-    except Exception as e:
-        print(f'Exception: {e}')
-        traceback.print_exc()
-
-    print(f'[Info] The best loss achieved is {best_loss} at epoch {best_epoch}')
     writer.close()
 
 
-def save_checkpoint(model, filename):
-    torch.save(model.state_dict(), filename)
-    print(f'[Info] Checkpoint saved to {filename}')
-
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = get_args()
     train(args)
