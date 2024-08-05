@@ -1,5 +1,3 @@
-# Author: Zylo117
-
 import torch
 from torch import nn
 
