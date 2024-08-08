@@ -1,9 +1,8 @@
 import torch
 from torch import nn
 
-from efficientdet.model import BiFPN, Regressor, Classifier, EfficientNet
 from efficientdet.utils import Anchors
-
+from efficientdet.model import BiFPN, Regressor, Classifier, EfficientNet
 
 class EfficientDetBackbone(nn.Module):
     def __init__(self, num_classes=80, compound_coef=0, load_weights=False, **kwargs):

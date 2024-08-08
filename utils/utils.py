@@ -1,21 +1,17 @@
-# Author: Zylo117
-
-import math
 import os
-import uuid
-from glob import glob
-from typing import Union
-
 import cv2
-import numpy as np
+import math
+import uuid
 import torch
 import webcolors
+import numpy as np
 from torch import nn
-from torch.nn.init import _calculate_fan_in_and_fan_out, _no_grad_normal_
+from glob import glob
+from typing import Union
 from torchvision.ops.boxes import batched_nms
+from torch.nn.init import _calculate_fan_in_and_fan_out, _no_grad_normal_
 
 from utils.sync_batchnorm import SynchronizedBatchNorm2d
-
 
 def invert_affine(metas: Union[float, list, tuple], preds):
     for i in range(len(preds)):
@@ -30,7 +26,6 @@ def invert_affine(metas: Union[float, list, tuple], preds):
                 preds[i]['rois'][:, [0, 2]] = preds[i]['rois'][:, [0, 2]] / (new_w / old_w)
                 preds[i]['rois'][:, [1, 3]] = preds[i]['rois'][:, [1, 3]] / (new_h / old_h)
     return preds
-
 
 def aspectaware_resize_padding(image, width, height, interpolation=None, means=None):
     old_h, old_w, c = image.shape
@@ -64,7 +59,6 @@ def aspectaware_resize_padding(image, width, height, interpolation=None, means=N
 
     return canvas, new_w, new_h, old_w, old_h, padding_w, padding_h,
 
-
 def preprocess(*image_path, max_size=512, mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)):
     ori_imgs = [cv2.imread(img_path) for img_path in image_path]
     normalized_imgs = [(img[..., ::-1] / 255 - mean) / std for img in ori_imgs]
@@ -75,7 +69,6 @@ def preprocess(*image_path, max_size=512, mean=(0.485, 0.456, 0.406), std=(0.229
 
     return ori_imgs, framed_imgs, framed_metas
 
-
 def preprocess_video(*frame_from_video, max_size=512, mean=(0.406, 0.456, 0.485), std=(0.225, 0.224, 0.229)):
     ori_imgs = frame_from_video
     normalized_imgs = [(img[..., ::-1] / 255 - mean) / std for img in ori_imgs]
@@ -85,7 +78,6 @@ def preprocess_video(*frame_from_video, max_size=512, mean=(0.406, 0.456, 0.485)
     framed_metas = [img_meta[1:] for img_meta in imgs_meta]
 
     return ori_imgs, framed_imgs, framed_metas
-
 
 def postprocess(x, anchors, regression, classification, regressBoxes, clipBoxes, threshold, iou_threshold):
     transformed_anchors = regressBoxes(anchors, regression)
@@ -127,7 +119,6 @@ def postprocess(x, anchors, regression, classification, regressBoxes, clipBoxes,
 
     return out
 
-
 def display(preds, imgs, obj_list, imshow=True, imwrite=False):
     for i in range(len(imgs)):
         if len(preds[i]['rois']) == 0:
@@ -149,7 +140,6 @@ def display(preds, imgs, obj_list, imshow=True, imwrite=False):
         if imwrite:
             os.makedirs('test/', exist_ok=True)
             cv2.imwrite(f'test/{uuid.uuid4().hex}.jpg', imgs[i])
-
 
 def replace_w_sync_bn(m):
     for var_name in dir(m):
@@ -181,11 +171,7 @@ def replace_w_sync_bn(m):
     for var_name, children in m.named_children():
         replace_w_sync_bn(children)
 
-
 class CustomDataParallel(nn.DataParallel):
-    """
-    force splitting data to all gpus instead of sending all data to cuda:0 and then moving around.
-    """
 
     def __init__(self, module, num_gpus):
         super().__init__(module)
@@ -205,7 +191,6 @@ class CustomDataParallel(nn.DataParallel):
                 for device_idx in range(len(devices))], \
                [kwargs] * len(devices)
 
-
 def get_last_weights(weights_path):
     weights_path = glob(weights_path + f'/*.pth')
     weights_path = sorted(weights_path,
@@ -213,7 +198,6 @@ def get_last_weights(weights_path):
                           reverse=True)[0]
     print(f'using weights {weights_path}')
     return weights_path
-
 
 def init_weights(model):
     for name, module in model.named_modules():
@@ -232,18 +216,12 @@ def init_weights(model):
                 else:
                     module.bias.data.zero_()
 
-
 def variance_scaling_(tensor, gain=1.):
-    # type: (Tensor, float) -> Tensor
-    r"""
-    initializer for SeparableConv in Regressor/Classifier
-    reference: https://keras.io/zh/initializers/  VarianceScaling
-    """
+
     fan_in, fan_out = _calculate_fan_in_and_fan_out(tensor)
     std = math.sqrt(gain / float(fan_in))
 
     return _no_grad_normal_(tensor, 0., std)
-
 
 STANDARD_COLORS = [
     'LawnGreen', 'Chartreuse', 'Aqua', 'Beige', 'Azure', 'BlanchedAlmond', 'Bisque',
@@ -271,12 +249,10 @@ STANDARD_COLORS = [
     'WhiteSmoke', 'Yellow', 'YellowGreen'
 ]
 
-
 def from_colorname_to_bgr(color):
     rgb_color = webcolors.name_to_rgb(color)
     result = (rgb_color.blue, rgb_color.green, rgb_color.red)
     return result
-
 
 def standard_to_bgr(list_color_name):
     standard = []
@@ -284,11 +260,9 @@ def standard_to_bgr(list_color_name):
         standard.append(from_colorname_to_bgr(list_color_name[i]))
     return standard
 
-
 def get_index_label(label, obj_list):
     index = int(obj_list.index(label))
     return index
-
 
 def plot_one_box(img, coord, label=None, score=None, color=None, line_thickness=None):
     tl = line_thickness or int(round(0.001 * max(img.shape[0:2])))  # line thickness
@@ -304,9 +278,7 @@ def plot_one_box(img, coord, label=None, score=None, color=None, line_thickness=
         cv2.putText(img, '{}: {:.0%}'.format(label, score), (c1[0], c1[1] - 2), 0, float(tl) / 3, [0, 0, 0],
                     thickness=tf, lineType=cv2.FONT_HERSHEY_SIMPLEX)
 
-
 color_list = standard_to_bgr(STANDARD_COLORS)
-
 
 def boolean_string(s):
     if s not in {'False', 'True'}:

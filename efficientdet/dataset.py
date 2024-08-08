@@ -1,11 +1,9 @@
 import os
+import vc2
 import torch
 import numpy as np
-
-from torch.utils.data import Dataset, DataLoader
 from pycocotools.coco import COCO
-import cv2
-
+from torch.utils.data import Dataset, DataLoader
 
 class CocoDataset(Dataset):
     def __init__(self, root_dir, set='train2017', transform=None):
@@ -82,7 +80,6 @@ class CocoDataset(Dataset):
 
         return annotations
 
-
 def collater(data):
     imgs = [s['img'] for s in data]
     annots = [s['annot'] for s in data]
@@ -106,10 +103,8 @@ def collater(data):
 
     return {'img': imgs, 'annot': annot_padded, 'scale': scales}
 
-
 class Resizer(object):
-    """Convert ndarrays in sample to Tensors."""
-    
+
     def __init__(self, img_size=512):
         self.img_size = img_size
 
@@ -136,7 +131,6 @@ class Resizer(object):
 
 
 class Augmenter(object):
-    """Convert ndarrays in sample to Tensors."""
 
     def __call__(self, sample, flip_x=0.5):
         if np.random.rand() < flip_x:

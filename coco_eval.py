@@ -1,9 +1,8 @@
-import json
 import os
-
-import argparse
-import torch
 import yaml
+import json
+import torch
+import argparse
 from tqdm import tqdm
 from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
@@ -38,7 +37,6 @@ params = yaml.safe_load(open(f'project/{project_name}.yml'))
 obj_list = params['obj_list']
 
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
-
 
 def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
     results = []
@@ -109,7 +107,6 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
         os.remove(filepath)
     json.dump(results, open(filepath, 'w'), indent=4)
 
-
 def _eval(coco_gt, image_ids, pred_json_path):
     # load results in COCO evaluation tool
     coco_pred = coco_gt.loadRes(pred_json_path)
@@ -121,7 +118,6 @@ def _eval(coco_gt, image_ids, pred_json_path):
     coco_eval.evaluate()
     coco_eval.accumulate()
     coco_eval.summarize()
-
 
 if __name__ == '__main__':
     SET_NAME = params['val_set']

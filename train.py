@@ -1,23 +1,21 @@
+import os
+import yaml
+import torch
 import argparse
 import datetime
-import os
 import traceback
-
 import numpy as np
-import torch
-import yaml
-from tensorboardX import SummaryWriter
 from torch import nn
-from torch.utils.data import DataLoader
 from torchvision import transforms
 from tqdm.autonotebook import tqdm
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader
 
-from backbone import EfficientDetBackbone
-from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
 from efficientdet.loss import FocalLoss
+from backbone import EfficientDetBackbone
 from utils.sync_batchnorm import patch_replication_callback
+from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
 from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string
-
 
 class Params:
     def __init__(self, project_file):
@@ -25,7 +23,6 @@ class Params:
 
     def __getattr__(self, item):
         return self.params.get(item, None)
-
 
 def get_args():
     parser = argparse.ArgumentParser('Yet Another EfficientDet Pytorch: SOTA object detection network - Zylo117')
@@ -59,7 +56,6 @@ def get_args():
     args = parser.parse_args()
     return args
 
-
 class ModelWithLoss(nn.Module):
     def __init__(self, model, debug=False):
         super().__init__()
@@ -75,7 +71,6 @@ class ModelWithLoss(nn.Module):
         else:
             cls_loss, reg_loss = self.criterion(classification, regression, anchors, annotations)
         return cls_loss, reg_loss
-
 
 def train(opt):
     params = Params(f'project/{opt.project}.yml')
@@ -156,13 +151,6 @@ def train(opt):
         model.apply(freeze_backbone)
         print('[Info] freezed backbone')
 
-    # https://github.com/vacancy/Synchronized-BatchNorm-PyTorch
-    # apply sync_bn when using multiple gpu and batch_size per gpu is lower than 4
-    #  useful when gpu memory is limited.
-    # because when bn is disable, the training will be very unstable or slow to converge,
-    # apply sync_bn can solve it,
-    # by packing all mini-batch across all gpus as one batch and normalize, then send it back to all gpus.
-    # but it would also slow down the training by a little bit.
     if params.num_gpus > 1 and opt.batch_size // params.num_gpus < 4:
         model.apply(replace_w_sync_bn)
         use_sync_bn = True
@@ -171,7 +159,6 @@ def train(opt):
 
     writer = SummaryWriter(opt.log_path + f'/{datetime.datetime.now().strftime("%Y%m%d-%H%M%S")}/')
 
-    # warp the model with loss function, to reduce the memory usage on gpu0 and speedup
     model = ModelWithLoss(model, debug=opt.debug)
 
     if params.num_gpus > 0:
@@ -213,8 +200,6 @@ def train(opt):
                     annot = data['annot']
 
                     if params.num_gpus == 1:
-                        # if only one gpu, just send it to cuda:0
-                        # elif multiple gpus, send it to multiple gpus in CustomDataParallel, not here
                         imgs = imgs.cuda()
                         annot = annot.cuda()
 
@@ -228,7 +213,6 @@ def train(opt):
                         continue
 
                     loss.backward()
-                    # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.1)
                     optimizer.step()
 
                     epoch_loss.append(float(loss))
@@ -286,7 +270,7 @@ def train(opt):
                 loss = cls_loss + reg_loss
 
                 print(
-                    '                Val Epoch: {}/{}                  ||  Cls Loss: {:1.5f}    ||  Reg Loss: {:1.5f}   ||  Ttl Loss: {:1.5f}'.format(
+                    '                Val Epoch: {}/{}                  ||  Cls Loss: {:1.5f}    ||  Reg Loss: {:1.5f}       ||  Ttl Loss: {:1.5f}'.format(
                         epoch, opt.num_epochs, cls_loss, reg_loss, loss))
                 writer.add_scalars('Loss', {'val': loss}, step)
                 writer.add_scalars('Reg Loss', {'val': reg_loss}, step)
@@ -300,7 +284,6 @@ def train(opt):
 
                 model.train()
 
-                # Early stopping
                 if epoch - best_epoch > opt.es_patience > 0:
                     print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
                     break
@@ -309,13 +292,11 @@ def train(opt):
         writer.close()
     writer.close()
 
-
 def save_checkpoint(model, name):
     if isinstance(model, CustomDataParallel):
         torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
     else:
         torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
-
 
 if __name__ == '__main__':
     opt = get_args()

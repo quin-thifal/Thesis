@@ -1,15 +1,12 @@
-import torch
-import torch.nn as nn
 import cv2
+import torch
 import numpy as np
+import torch.nn as nn
 
 from efficientdet.utils import BBoxTransform, ClipBoxes
 from utils.utils import postprocess, invert_affine, display
 
-
 def calc_iou(a, b):
-    # a(anchor) [boxes, (y1, x1, y2, x2)]
-    # b(gt, coco-style) [boxes, (x1, y1, x2, y2)]
 
     area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
     iw = torch.min(torch.unsqueeze(a[:, 3], dim=1), b[:, 2]) - torch.max(torch.unsqueeze(a[:, 1], 1), b[:, 0])
@@ -23,7 +20,6 @@ def calc_iou(a, b):
 
     return IoU
 
-
 class FocalLoss(nn.Module):
     def __init__(self):
         super(FocalLoss, self).__init__()
@@ -35,7 +31,7 @@ class FocalLoss(nn.Module):
         classification_losses = []
         regression_losses = []
 
-        anchor = anchors[0, :, :]  # assuming all image sizes are the same, which it is
+        anchor = anchors[0, :, :]
         dtype = anchors.dtype
 
         anchor_widths = anchor[:, 3] - anchor[:, 1]
@@ -88,7 +84,6 @@ class FocalLoss(nn.Module):
 
             IoU_max, IoU_argmax = torch.max(IoU, dim=1)
 
-            # compute the loss for classification
             targets = torch.ones_like(classification) * -1
             if torch.cuda.is_available():
                 targets = targets.cuda()
@@ -136,7 +131,6 @@ class FocalLoss(nn.Module):
                 gt_ctr_x = assigned_annotations[:, 0] + 0.5 * gt_widths
                 gt_ctr_y = assigned_annotations[:, 1] + 0.5 * gt_heights
 
-                # efficientdet style
                 gt_widths = torch.clamp(gt_widths, min=1)
                 gt_heights = torch.clamp(gt_heights, min=1)
 
@@ -162,7 +156,6 @@ class FocalLoss(nn.Module):
                 else:
                     regression_losses.append(torch.tensor(0).to(dtype))
 
-        # debug
         imgs = kwargs.get('imgs', None)
         if imgs is not None:
             regressBoxes = BBoxTransform()
