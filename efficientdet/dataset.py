@@ -1,5 +1,4 @@
 import os
-import vc2
 import torch
 import numpy as np
 from pycocotools.coco import COCO
