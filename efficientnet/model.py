@@ -81,7 +81,6 @@ class MBConvBlock(nn.Module):
     def set_swish(self, memory_efficient=True):
         self._swish = MemoryEfficientSwish() if memory_efficient else Swish()
 
-
 class EfficientNet(nn.Module):
 
     def __init__(self, blocks_args=None, global_params=None):
