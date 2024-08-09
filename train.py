@@ -1,5 +1,4 @@
 import os
-import csv
 import yaml
 import torch
 import argparse
@@ -18,25 +17,6 @@ from utils.sync_batchnorm import patch_replication_callback
 from efficientdet.dataset import CocoDataset, Resizer, Normalizer, Augmenter, collater
 from utils.utils import replace_w_sync_bn, CustomDataParallel, get_last_weights, init_weights, boolean_string
 
-# Define CSV logging
-log_file_path = 'training_logs.csv'
-
-def initialize_csv_log():
-    with open(log_file_path, 'w', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([
-            'Step', 'Epoch', 'Iteration', 'Cls Loss', 'Reg Loss', 'Total Loss',
-            'Val Epoch', 'Cls Loss Val', 'Reg Loss Val', 'Total Loss Val'
-        ])
-
-def append_csv_log(step, epoch, iter, cls_loss, reg_loss, total_loss, val_epoch=None, cls_loss_val=None, reg_loss_val=None, total_loss_val=None):
-    with open(log_file_path, 'a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([
-            step, epoch, iter, cls_loss, reg_loss, total_loss,
-            val_epoch, cls_loss_val, reg_loss_val, total_loss_val
-        ])
-
 class Params:
     def __init__(self, project_file):
         self.params = yaml.safe_load(open(project_file).read())
@@ -45,7 +25,7 @@ class Params:
         return self.params.get(item, None)
 
 def get_args():
-    parser = argparse.ArgumentParser('Diabetic Foot')
+    parser = argparse.ArgumentParser('Yet Another EfficientDet Pytorch: SOTA object detection network - Zylo117')
     parser.add_argument('-p', '--project', type=str, default='coco', help='project file that contains parameters')
     parser.add_argument('-c', '--compound_coef', type=int, default=0, help='coefficients of efficientdet')
     parser.add_argument('-n', '--num_workers', type=int, default=12, help='num_workers of dataloader')
@@ -94,7 +74,6 @@ class ModelWithLoss(nn.Module):
 
 def train(opt):
     params = Params(f'project/{opt.project}.yml')
-    initialize_csv_log()  # Initialize the CSV log file
 
     if params.num_gpus == 0:
         os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
@@ -136,6 +115,7 @@ def train(opt):
     model = EfficientDetBackbone(num_classes=len(params.obj_list), compound_coef=opt.compound_coef,
                                  ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales))
 
+    # load last weights
     if opt.load_weights is not None:
         if opt.load_weights.endswith('.pth'):
             weights_path = opt.load_weights
@@ -159,6 +139,7 @@ def train(opt):
         print('[Info] initializing weights...')
         init_weights(model)
 
+    # freeze backbone if train head_only
     if opt.head_only:
         def freeze_backbone(m):
             classname = m.__class__.__name__
@@ -184,87 +165,139 @@ def train(opt):
         model = model.cuda()
         if params.num_gpus > 1:
             model = CustomDataParallel(model, params.num_gpus)
-            patch_replication_callback(model)
+            if use_sync_bn:
+                patch_replication_callback(model)
 
-    if opt.optim == 'sgd':
-        optimizer = torch.optim.SGD(model.parameters(), lr=opt.lr, momentum=0.9, weight_decay=4e-5)
-    elif opt.optim == 'adamw':
-        optimizer = torch.optim.AdamW(model.parameters(), lr=opt.lr, weight_decay=1e-4)
+    if opt.optim == 'adamw':
+        optimizer = torch.optim.AdamW(model.parameters(), opt.lr)
     else:
-        raise NotImplementedError(f'{opt.optim} not implemented')
+        optimizer = torch.optim.SGD(model.parameters(), opt.lr, momentum=0.9, nesterov=True)
 
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[150, 250, 350], gamma=0.3)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
 
-    step = last_step
+    epoch = 0
+    best_loss = 1e5
+    best_epoch = 0
+    step = max(0, last_step)
+    model.train()
 
-    while step < len(training_generator) * opt.num_epochs:
-        model.train()
-        epoch = step // len(training_generator)
-        epoch_iter = step % len(training_generator)
-        pbar = tqdm(enumerate(training_generator), total=len(training_generator), leave=False)
+    num_iter_per_epoch = len(training_generator)
 
-        for i, (imgs, annotations, obj_list) in pbar:
-            if epoch == opt.num_epochs:
-                break
+    try:
+        for epoch in range(opt.num_epochs):
+            last_epoch = step // num_iter_per_epoch
+            if epoch < last_epoch:
+                continue
 
-            if params.num_gpus > 0:
-                imgs = imgs.cuda()
-                annotations = [a.cuda() for a in annotations]
+            epoch_loss = []
+            progress_bar = tqdm(training_generator)
+            for iter, data in enumerate(progress_bar):
+                if iter < step - last_epoch * num_iter_per_epoch:
+                    progress_bar.update()
+                    continue
+                try:
+                    imgs = data['img']
+                    annot = data['annot']
 
-            cls_loss, reg_loss = model(imgs, annotations, obj_list)
-            total_loss = cls_loss + reg_loss
+                    if params.num_gpus == 1:
+                        imgs = imgs.cuda()
+                        annot = annot.cuda()
 
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+                    optimizer.zero_grad()
+                    cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                    cls_loss = cls_loss.mean()
+                    reg_loss = reg_loss.mean()
 
-            pbar.set_description(f'[Training] Epoch: {epoch}, Iter: {i}, Cls Loss: {cls_loss.item():.4f}, '
-                                 f'Reg Loss: {reg_loss.item():.4f}, Total Loss: {total_loss.item():.4f}')
-            writer.add_scalar('training/cls_loss', cls_loss.item(), step)
-            writer.add_scalar('training/reg_loss', reg_loss.item(), step)
-            writer.add_scalar('training/total_loss', total_loss.item(), step)
+                    loss = cls_loss + reg_loss
+                    if loss == 0 or not torch.isfinite(loss):
+                        continue
 
-            append_csv_log(step, epoch, i, cls_loss.item(), reg_loss.item(), total_loss.item())
+                    loss.backward()
+                    optimizer.step()
 
-            step += 1
+                    epoch_loss.append(float(loss))
 
-        model.eval()
-        with torch.no_grad():
-            val_pbar = tqdm(enumerate(val_generator), total=len(val_generator), leave=False)
-            cls_loss_val, reg_loss_val, total_loss_val = 0, 0, 0
-            for i, (imgs, annotations, obj_list) in val_pbar:
-                if params.num_gpus > 0:
-                    imgs = imgs.cuda()
-                    annotations = [a.cuda() for a in annotations]
+                    progress_bar.set_description(
+                        'Step: {}   ||  Tra Epoch: {}/{}    ||  Itr: {}/{}  ||  Cls Loss: {:.5f}    ||  Reg Loss: {:.5f}    ||  Ttl Loss: {:.5f}'.format(
+                            step, epoch, opt.num_epochs, iter + 1, num_iter_per_epoch, cls_loss.item(),
+                            reg_loss.item(), loss.item()))
+                    writer.add_scalars('Loss', {'train': loss}, step)
+                    writer.add_scalars('Reg Loss', {'train': reg_loss}, step)
+                    writer.add_scalars('Cls Loss', {'train': cls_loss}, step)
 
-                cls_loss, reg_loss = model(imgs, annotations, obj_list)
-                total_loss = cls_loss + reg_loss
-                cls_loss_val += cls_loss.item()
-                reg_loss_val += reg_loss.item()
-                total_loss_val += total_loss.item()
+                    # log learning_rate
+                    current_lr = optimizer.param_groups[0]['lr']
+                    writer.add_scalar('LR', current_lr, step)
 
-                val_pbar.set_description(f'[Validation] Epoch: {epoch}, Cls Loss: {cls_loss.item():.4f}, '
-                                         f'Reg Loss: {reg_loss.item():.4f}, Total Loss: {total_loss.item():.4f}')
-                writer.add_scalar('validation/cls_loss', cls_loss.item(), step)
-                writer.add_scalar('validation/reg_loss', reg_loss.item(), step)
-                writer.add_scalar('validation/total_loss', total_loss.item(), step)
+                    step += 1
 
-            append_csv_log(step, epoch, i, cls_loss.item(), reg_loss.item(), total_loss.item(), epoch, cls_loss_val, reg_loss_val, total_loss_val)
+                    if step % opt.save_interval == 0 and step > 0:
+                        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+                        print('checkpoint...')
 
-        scheduler.step()
+                except Exception as e:
+                    print('[Error]', traceback.format_exc())
+                    print(e)
+                    continue
+            scheduler.step(np.mean(epoch_loss))
 
-        if (epoch + 1) % opt.val_interval == 0:
-            print(f'[Info] Saving weights at epoch {epoch + 1}...')
-            torch.save(model.state_dict(), opt.saved_path + f'{epoch + 1}.pth')
+            if epoch % opt.val_interval == 0:
+                model.eval()
+                loss_regression_ls = []
+                loss_classification_ls = []
+                for iter, data in enumerate(val_generator):
+                    with torch.no_grad():
+                        imgs = data['img']
+                        annot = data['annot']
 
-        if epoch >= opt.num_epochs - 1:
-            print(f'[Info] Training completed.')
-            break
+                        if params.num_gpus == 1:
+                            imgs = imgs.cuda()
+                            annot = annot.cuda()
+
+                        cls_loss, reg_loss = model(imgs, annot, obj_list=params.obj_list)
+                        cls_loss = cls_loss.mean()
+                        reg_loss = reg_loss.mean()
+
+                        loss = cls_loss + reg_loss
+                        if loss == 0 or not torch.isfinite(loss):
+                            continue
+
+                        loss_classification_ls.append(cls_loss.item())
+                        loss_regression_ls.append(reg_loss.item())
+
+                cls_loss = np.mean(loss_classification_ls)
+                reg_loss = np.mean(loss_regression_ls)
+                loss = cls_loss + reg_loss
+
+                print(
+                    '                Val Epoch: {}/{}                  ||  Cls Loss: {:1.5f}    ||  Reg Loss: {:1.5f}       ||  Ttl Loss: {:1.5f}'.format(
+                        epoch, opt.num_epochs, cls_loss, reg_loss, loss))
+                writer.add_scalars('Loss', {'val': loss}, step)
+                writer.add_scalars('Reg Loss', {'val': reg_loss}, step)
+                writer.add_scalars('Cls Loss', {'val': cls_loss}, step)
+
+                if loss + opt.es_min_delta < best_loss:
+                    best_loss = loss
+                    best_epoch = epoch
+
+                    save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+
+                model.train()
+
+                if epoch - best_epoch > opt.es_patience > 0:
+                    print('[Info] Stop training at epoch {}. The lowest loss achieved is {}'.format(epoch, best_loss))
+                    break
+    except KeyboardInterrupt:
+        save_checkpoint(model, f'efficientdet-d{opt.compound_coef}_{epoch}_{step}.pth')
+        writer.close()
+    writer.close()
+
+def save_checkpoint(model, name):
+    if isinstance(model, CustomDataParallel):
+        torch.save(model.module.model.state_dict(), os.path.join(opt.saved_path, name))
+    else:
+        torch.save(model.model.state_dict(), os.path.join(opt.saved_path, name))
 
 if __name__ == '__main__':
-    args = get_args()
-    try:
-        train(args)
-    except Exception as e:
-        print(f'[Error] {e}')
-        traceback.print_exc()
+    opt = get_args()
+    train(opt)
