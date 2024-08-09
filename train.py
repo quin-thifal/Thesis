@@ -270,7 +270,7 @@ def train(opt):
                 loss = cls_loss + reg_loss
 
                 print(
-                    '                Val Epoch: {}/{}                  ||  Cls Loss: {:1.5f}    ||  Reg Loss: {:1.5f}       ||  Ttl Loss: {:1.5f}'.format(
+                    '                Val Epoch: {}/{}                  ||  Cls Loss: {:1.5f}    ||  Reg Loss: {:1.5f}      ||  Ttl Loss: {:1.5f}'.format(
                         epoch, opt.num_epochs, cls_loss, reg_loss, loss))
                 writer.add_scalars('Loss', {'val': loss}, step)
                 writer.add_scalars('Reg Loss', {'val': reg_loss}, step)
