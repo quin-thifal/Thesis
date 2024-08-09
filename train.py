@@ -136,7 +136,6 @@ def train(opt):
     model = EfficientDetBackbone(num_classes=len(params.obj_list), compound_coef=opt.compound_coef,
                                  ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales))
 
-    # load last weights
     if opt.load_weights is not None:
         if opt.load_weights.endswith('.pth'):
             weights_path = opt.load_weights
@@ -160,7 +159,6 @@ def train(opt):
         print('[Info] initializing weights...')
         init_weights(model)
 
-    # freeze backbone if train head_only
     if opt.head_only:
         def freeze_backbone(m):
             classname = m.__class__.__name__
@@ -226,7 +224,6 @@ def train(opt):
             writer.add_scalar('training/reg_loss', reg_loss.item(), step)
             writer.add_scalar('training/total_loss', total_loss.item(), step)
 
-            # Log details to CSV
             append_csv_log(step, epoch, i, cls_loss.item(), reg_loss.item(), total_loss.item())
 
             step += 1
@@ -252,7 +249,6 @@ def train(opt):
                 writer.add_scalar('validation/reg_loss', reg_loss.item(), step)
                 writer.add_scalar('validation/total_loss', total_loss.item(), step)
 
-            # Log validation details to CSV
             append_csv_log(step, epoch, i, cls_loss.item(), reg_loss.item(), total_loss.item(), epoch, cls_loss_val, reg_loss_val, total_loss_val)
 
         scheduler.step()
