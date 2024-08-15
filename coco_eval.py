@@ -15,7 +15,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument('-p', '--project', type=str, default='coco', help='project file that contains parameters')
 ap.add_argument('-c', '--compound_coef', type=int, default=0, help='coefficients of efficientdet')
 ap.add_argument('-w', '--weights', type=str, default=None, help='/path/to/weights')
-ap.add_argument('--nms_threshold', type=float, default=0.5, help='nms threshold, don\'t change it if not for testing purposes')
+ap.add_argument('--nms_threshold', type=float, default=0.5,
+                help='nms threshold, don\'t change it if not for testing purposes')
 ap.add_argument('--cuda', type=boolean_string, default=True)
 ap.add_argument('--device', type=int, default=0)
 ap.add_argument('--float16', type=boolean_string, default=False)
@@ -38,6 +39,7 @@ obj_list = params['obj_list']
 
 input_sizes = [512, 640, 768, 896, 1024, 1280, 1280, 1536, 1536]
 
+
 def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
     results = []
 
@@ -48,7 +50,8 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
         image_info = coco.loadImgs(image_id)[0]
         image_path = img_path + image_info['file_name']
 
-        ori_imgs, framed_imgs, framed_metas = preprocess(image_path, max_size=input_sizes[compound_coef], mean=params['mean'], std=params['std'])
+        ori_imgs, framed_imgs, framed_metas = preprocess(image_path, max_size=input_sizes[compound_coef],
+                                                         mean=params['mean'], std=params['std'])
         x = torch.from_numpy(framed_imgs[0])
 
         if use_cuda:
@@ -67,7 +70,7 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
                             anchors, regression, classification,
                             regressBoxes, clipBoxes,
                             threshold, nms_threshold)
-        
+
         if not preds:
             continue
 
@@ -107,6 +110,7 @@ def evaluate_coco(img_path, set_name, image_ids, coco, model, threshold=0.05):
         os.remove(filepath)
     json.dump(results, open(filepath, 'w'), indent=4)
 
+
 def _eval(coco_gt, image_ids, pred_json_path):
     # load results in COCO evaluation tool
     coco_pred = coco_gt.loadRes(pred_json_path)
@@ -119,6 +123,7 @@ def _eval(coco_gt, image_ids, pred_json_path):
     coco_eval.accumulate()
     coco_eval.summarize()
 
+
 if __name__ == '__main__':
     SET_NAME = params['val_set']
     VAL_GT = f'dataset/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
@@ -126,7 +131,7 @@ if __name__ == '__main__':
     MAX_IMAGES = 10000
     coco_gt = COCO(VAL_GT)
     image_ids = coco_gt.getImgIds()[:MAX_IMAGES]
-    
+
     if override_prev_results or not os.path.exists(f'{SET_NAME}_bbox_results.json'):
         model = EfficientDetBackbone(compound_coef=compound_coef, num_classes=len(obj_list),
                                      ratios=eval(params['anchors_ratios']), scales=eval(params['anchors_scales']))
