@@ -141,7 +141,7 @@ class FocalLoss(nn.Module):
                               regressBoxes, clipBoxes,
                               0.5, 0.3)
             imgs = imgs.permute(0, 2, 3, 1).cpu().numpy()
-            imgs = ((imgs * [0.17634014, 0.28190098, 0.26452454] + [0.1428785, 0.28567852, 0.24536263]) * 255).astype(np.uint8)
+            imgs = ((imgs * [0.25623637, 0.25718808, 0.21674845] + [0.24406503, 0.24056134, 0.1945087]) * 255).astype(np.uint8)
             imgs = [cv2.cvtColor(img, cv2.COLOR_RGB2BGR) for img in imgs]
             display(out, imgs, obj_list, imshow=False, imwrite=True)
         return torch.stack(classification_losses).mean(dim=0, keepdim=True), \
