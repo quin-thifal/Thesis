@@ -1,6 +1,6 @@
 project_name: foot-ulcer
 train_set: train
-valid_set: valid
+val_set: val
 num_gpus: 1
 
 mean: [0.17302257, 0.34172715, 0.31522596]

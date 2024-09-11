@@ -125,7 +125,7 @@ def _eval(coco_gt, image_ids, pred_json_path):
 
 
 if __name__ == '__main__':
-    SET_NAME = params['valid_set']
+    SET_NAME = params['val_set']
     VAL_GT = f'dataset/{params["project_name"]}/annotations/instances_{SET_NAME}.json'
     VAL_IMGS = f'dataset/{params["project_name"]}/{SET_NAME}/'
     MAX_IMAGES = 10000
