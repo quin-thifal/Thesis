@@ -107,7 +107,7 @@ def train(opt):
                                                              Resizer(input_sizes[opt.compound_coef])]))
     training_generator = DataLoader(training_set, **training_params)
 
-    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.val_set,
+    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.valid_set,
                           transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                         Resizer(input_sizes[opt.compound_coef])]))
     val_generator = DataLoader(val_set, **val_params)
@@ -272,9 +272,9 @@ def train(opt):
                 print(
                     '                Val Epoch: {}/{}                  ||  Cls Loss: {:1.5f}    ||  Reg Loss: {:1.5f}    ||  Ttl Loss: {:1.5f}'.format(
                         epoch, opt.num_epochs, cls_loss, reg_loss, loss))
-                writer.add_scalars('Loss', {'val': loss}, step)
-                writer.add_scalars('Reg Loss', {'val': reg_loss}, step)
-                writer.add_scalars('Cls Loss', {'val': cls_loss}, step)
+                writer.add_scalars('Loss', {'valid': loss}, step)
+                writer.add_scalars('Reg Loss', {'valid': reg_loss}, step)
+                writer.add_scalars('Cls Loss', {'valid': cls_loss}, step)
 
                 if loss + opt.es_min_delta < best_loss:
                     best_loss = loss

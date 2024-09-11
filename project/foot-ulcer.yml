@@ -1,10 +1,10 @@
 project_name: foot-ulcer
 train_set: train
-val_set: val
+valid_set: valid
 num_gpus: 1
 
-mean: [0.24406503, 0.24056134, 0.1945087]
-std: [0.25623637, 0.25718808, 0.21674845]
+mean: [0.17302257, 0.34172715, 0.31522596]
+std: [0.18513017, 0.27839671, 0.27886794]
 
 anchors_scales: '[1, 1.25, 1.5]'
 anchors_ratios: '[(1.0, 1.0), (1.0, 1.0), (2.0, 0.5)]'
