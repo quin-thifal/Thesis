@@ -7,6 +7,6 @@ mean: [0.17302257, 0.34172715, 0.31522596]
 std: [0.18513017, 0.27839671, 0.27886794]
 
 anchors_scales: '[1, 1.25, 1.5]'
-anchors_ratios: '[(1.0, 1.0), (1.0, 1.0), (2.0, 0.5)]'
+anchors_ratios: '[(0.25 2.0), (0.3, 2.0), (0.5, 2.0)]'
 
 obj_list: ['Healthy', 'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5']
