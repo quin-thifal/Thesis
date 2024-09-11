@@ -94,7 +94,7 @@ def train(opt):
                        'collate_fn': collater,
                        'num_workers': opt.num_workers}
 
-    val_params = {'batch_size': opt.batch_size,
+    valid_params = {'batch_size': opt.batch_size,
                   'shuffle': False,
                   'drop_last': True,
                   'collate_fn': collater,
@@ -107,10 +107,10 @@ def train(opt):
                                                              Resizer(input_sizes[opt.compound_coef])]))
     training_generator = DataLoader(training_set, **training_params)
 
-    val_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.valid_set,
+    valid_set = CocoDataset(root_dir=os.path.join(opt.data_path, params.project_name), set=params.valid_set,
                           transform=transforms.Compose([Normalizer(mean=params.mean, std=params.std),
                                                         Resizer(input_sizes[opt.compound_coef])]))
-    val_generator = DataLoader(val_set, **val_params)
+    val_generator = DataLoader(valid_set, **valid_params)
 
     model = EfficientDetBackbone(num_classes=len(params.obj_list), compound_coef=opt.compound_coef,
                                  ratios=eval(params.anchors_ratios), scales=eval(params.anchors_scales))
