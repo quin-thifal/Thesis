@@ -126,7 +126,7 @@ class Augmenter(object):
 # Normalizer class for image normalization
 class Normalizer(object):
     # Initialization with mean and std
-    def __init__(self, mean=[0.17302257, 0.34172715, 0.31522596], std=[0.18513017, 0.27839671, 0.27886794]):
+    def __init__(self, mean=[0.28176597, 0.2972631, 0.23354986], std=[0.25974312, 0.25491954, 0.22131094]):
         self.mean = np.array([[mean]])
         self.std = np.array([[std]])
     # Normalize image
