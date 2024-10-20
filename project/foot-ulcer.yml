@@ -1,0 +1,12 @@
+project_name: foot-ulcer
+train_set: train
+val_set: val
+num_gpus: 1
+
+mean: [0.1033151, 0.14598808, 0.12299937]
+std: [0.1614086, 0.21107776, 0.18125893]
+
+anchors_scales: '[1, 1.25, 1.5]'
+anchors_ratios: '[(0.25, 1.0), (0.33, 1.0), (0.5, 1.0)]'
+
+obj_list: ['Healthy', 'Diabetes']
