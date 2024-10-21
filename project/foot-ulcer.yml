@@ -9,4 +9,4 @@ std: [0.19431791, 0.24899805, 0.25848229]
 anchors_scales: '[1.0, 1.2, 1.5]'
 anchors_ratios: '[(1.0, 0.8), (1.0, 1.0), (1.0, 1.2)]'
 
-obj_list: ['Healthy', 'Diabetes']
+obj_list: ['Diabetes', 'Healthy']
